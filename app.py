@@ -19,10 +19,13 @@ AQ_VARS = "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,us_
 W_VARS = "temperature_2m,relative_humidity_2m,wind_speed_10m,pressure_msl"
 TEAL = "#0d9488"
 NAVY = "#0b2545"
+BLUE = "#134074"
 
 # ---------- Styling ----------
 st.markdown("""
 <style>
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 .hero {
     background: linear-gradient(135deg, #0b2545 0%, #134074 45%, #0d9488 100%);
     padding: 2.2rem 1.5rem; border-radius: 20px; text-align: center;
@@ -33,24 +36,41 @@ st.markdown("""
 .hero p { margin: .5rem 0 0 0; opacity: .9; font-size: 1.05rem; }
 .card {
     padding: 1.1rem; border-radius: 16px; text-align: center; color: white;
+    background: linear-gradient(145deg, #0b2545, #0d9488);
     box-shadow: 0 6px 16px rgba(11,37,69,.20); margin-bottom: .8rem;
 }
 .card .day { font-size: .95rem; opacity: .95; }
 .card .val { font-size: 2.5rem; font-weight: 700; line-height: 1.2; }
 .card .cat { font-size: .85rem; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+       margin-right: 6px; border: 1px solid white; }
 .advice {
     padding: 1rem 1.2rem; border-radius: 12px; background: white;
-    border-left: 6px solid; margin-top: .5rem; color: #0b2545;
+    border-left: 6px solid #0d9488; margin-top: .5rem; color: #0b2545;
     box-shadow: 0 2px 8px rgba(11,37,69,.10);
 }
-.footer {
-    text-align: center; padding: 1.5rem 0 .5rem 0; margin-top: 2rem;
-    border-top: 2px solid #0d9488; color: #0b2545;
+.footer-custom {
+    text-align: center; padding: 1rem; margin-top: 2rem; color: white;
+    background: linear-gradient(90deg, #0b2545, #0d9488); border-radius: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------- Helpers ----------
+CHART_CFG = {"staticPlot": True}  # no zoom / click
+
+def style_fig(fig, height=420):
+    fig.update_layout(
+        height=height,
+        paper_bgcolor="white", plot_bgcolor="white",
+        font=dict(color=NAVY, size=14),
+        dragmode=False,
+        margin=dict(t=60, b=40, l=40, r=20),
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="#e3eef0", linecolor=NAVY)
+    fig.update_yaxes(showgrid=True, gridcolor="#e3eef0", linecolor=NAVY)
+    return fig
+
 def get(url, params):
     r = requests.get(url, params=params, timeout=60)
     r.raise_for_status()
@@ -68,10 +88,11 @@ def make_features(d):
     return d
 
 def info(aqi):
+    # returns: label, dot colour, advice
     if aqi <= 50:
         return "Good", "#2e9e5b", "Air quality is good. Outdoor activities are perfectly fine."
     if aqi <= 100:
-        return "Moderate", "#d4a017", "Air quality is acceptable, but unusually sensitive people (e.g. asthma) should take care."
+        return "Moderate", "#f1c40f", "Air quality is acceptable, but unusually sensitive people (e.g. asthma) should take care."
     if aqi <= 150:
         return "Unhealthy for Sensitive Groups", "#e67e22", "Children, elderly and people with breathing problems should limit time outdoors."
     if aqi <= 200:
@@ -140,35 +161,33 @@ try:
             gauge = go.Figure(go.Indicator(
                 mode="gauge+number", value=round(current),
                 title={"text": f"Current AQI: {label}"},
-                gauge={"axis": {"range": [0, 300]}, "bar": {"color": color},
-                       "steps": [{"range": [0, 50], "color": "#c8f0d6"},
-                                 {"range": [50, 100], "color": "#fff3c4"},
-                                 {"range": [100, 150], "color": "#ffe0b8"},
-                                 {"range": [150, 200], "color": "#ffc9c9"},
-                                 {"range": [200, 300], "color": "#e3c9f0"}]}))
-            gauge.update_layout(height=300, margin=dict(t=60, b=10, l=20, r=20),
-                                paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(gauge, use_container_width=True)
+                gauge={"axis": {"range": [0, 300]}, "bar": {"color": TEAL},
+                       "steps": [{"range": [0, 50], "color": "#d9f0f2"},
+                                 {"range": [50, 100], "color": "#b9e3e6"},
+                                 {"range": [100, 150], "color": "#8fcfd4"},
+                                 {"range": [150, 200], "color": "#5fb5bd"},
+                                 {"range": [200, 300], "color": "#2f8f9a"}]}))
+            st.plotly_chart(style_fig(gauge, 300), use_container_width=True, config=CHART_CFG)
         with right:
             st.subheader("Next 3 days")
             cols = st.columns(3)
             for col, (_, row) in zip(cols, fc.iterrows()):
                 l, c, _ = info(row["AQI"])
                 col.markdown(
-                    f'<div class="card" style="background:{c}">'
+                    f'<div class="card">'
                     f'<div class="day">{row["Date"]}</div>'
                     f'<div class="val">{row["AQI"]}</div>'
-                    f'<div class="cat">{l}</div></div>', unsafe_allow_html=True)
+                    f'<div class="cat"><span class="dot" style="background:{c}"></span>{l}</div></div>',
+                    unsafe_allow_html=True)
             st.markdown(
-                f'<div class="advice" style="border-color:{color}">'
-                f'💡 <b>Health advice:</b> {advice}</div>', unsafe_allow_html=True)
+                f'<div class="advice">💡 <b>Health advice:</b> {advice}</div>',
+                unsafe_allow_html=True)
 
-        colors = [info(a)[1] for a in fc["AQI"]]
-        bar = go.Figure(go.Bar(x=fc["Date"], y=fc["AQI"], marker_color=colors,
+        bar = go.Figure(go.Bar(x=fc["Date"], y=fc["AQI"],
+                               marker_color=[TEAL, BLUE, NAVY],
                                text=fc["AQI"], textposition="outside"))
-        bar.update_layout(title="Forecast chart", yaxis_title="AQI", height=320,
-                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(bar, use_container_width=True)
+        bar.update_layout(title="Forecast chart", yaxis_title="AQI")
+        st.plotly_chart(style_fig(bar, 320), use_container_width=True, config=CHART_CFG)
 
     # ----- Tab 2: History -----
     with tab2:
@@ -179,10 +198,9 @@ try:
         if show_bands:
             for lo, hi, c in [(0, 50, "green"), (50, 100, "yellow"),
                               (100, 150, "orange"), (150, 200, "red")]:
-                fig.add_hrect(y0=lo, y1=hi, fillcolor=c, opacity=0.10, line_width=0)
-        fig.update_layout(height=420, xaxis_title="Time", yaxis_title="AQI",
-                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True)
+                fig.add_hrect(y0=lo, y1=hi, fillcolor=c, opacity=0.08, line_width=0)
+        fig.update_layout(xaxis_title="Time", yaxis_title="AQI")
+        st.plotly_chart(style_fig(fig), use_container_width=True, config=CHART_CFG)
         c1, c2, c3 = st.columns(3)
         c1.metric("Average AQI", round(h["us_aqi"].mean()))
         c2.metric("Highest AQI", round(h["us_aqi"].max()))
@@ -200,11 +218,10 @@ try:
             cutoff = hist["time"].max() - pd.Timedelta(days=days)
             h = hist[hist["time"] >= cutoff]
             fig2 = px.line(h, x="time", y=[opts[p] for p in pick],
-                           color_discrete_sequence=[TEAL, "#134074", "#e67e22",
+                           color_discrete_sequence=[TEAL, BLUE, "#e67e22",
                                                     "#8e44ad", "#d63031", "#2e9e5b"])
-            fig2.update_layout(height=420, legend_title="",
-                               paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig2, use_container_width=True)
+            fig2.update_layout(legend_title="")
+            st.plotly_chart(style_fig(fig2), use_container_width=True, config=CHART_CFG)
         else:
             st.info("Please select at least one option above.")
 
@@ -212,7 +229,7 @@ try:
     with tab4:
         st.markdown(f"""
 ### About this project
-This app predicts Karachi's **US AQI** for the next 24, 48 and 72 hours.
+This app predicts Karachi's **Air Quality Index (AQI)** for the next 24, 48 and 72 hours. AQI values follow the US EPA scale (0-500), which is the standard used by the Open-Meteo data source.
 
 **Process:**
 1. Hourly pollution and weather data collected from the Open-Meteo API (from Jan 2024)
@@ -230,5 +247,6 @@ except Exception as e:
 
 # ---------- Footer ----------
 st.markdown(
-    f'<div class="footer">Developed by <b>{YOUR_NAME}</b> | Data Science Intern | 2026</div>',
+    f'<div class="footer-custom">Developed by <b>{YOUR_NAME}</b> | Data Science Intern | 2026</div>',
+    unsafe_allow_html=True)'<div class="footer">Developed by <b>{YOUR_NAME}</b> | Data Science Intern | 2026</div>',
     unsafe_allow_html=True)
