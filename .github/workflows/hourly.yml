@@ -16,6 +16,12 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements.txt
+              - name: Check secret
+        env:
+          K: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: |
+          echo "secret length: ${#K}"
+          echo "dots: $(echo "$K" | tr -cd '.' | wc -c)"
       - name: Ingest data
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
