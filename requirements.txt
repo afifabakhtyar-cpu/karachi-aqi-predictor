@@ -1,7 +1,12 @@
 streamlit
 pandas
+numpy
 requests
 joblib
 scikit-learn
-numpy
 plotly
+hopsworks[python]
+langgraph
+shap
+statsmodels
+torch
