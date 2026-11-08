@@ -248,5 +248,4 @@ except Exception as e:
 # ---------- Footer ----------
 st.markdown(
     f'<div class="footer-custom">Developed by <b>{YOUR_NAME}</b> | Data Science Intern | 2026</div>',
-    unsafe_allow_html=True)'<div class="footer">Developed by <b>{YOUR_NAME}</b> | Data Science Intern | 2026</div>',
     unsafe_allow_html=True)
