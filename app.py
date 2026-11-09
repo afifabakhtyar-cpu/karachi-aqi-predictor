@@ -1,251 +1,189 @@
+import os, json
 import streamlit as st
 import pandas as pd
-import requests
-import joblib
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import hopsworks
 
-# ====== WRITE YOUR NAME HERE ======
 YOUR_NAME = "Afifa Bakhtyar"
-# ==================================
-
-st.set_page_config(page_title="Karachi AQI Predictor", page_icon="🌫️", layout="wide")
-
-LAT, LON = 24.8607, 67.0011
-TZ = "Asia/Karachi"
-AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
-W_FORECAST = "https://api.open-meteo.com/v1/forecast"
-AQ_VARS = "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,us_aqi"
-W_VARS = "temperature_2m,relative_humidity_2m,wind_speed_10m,pressure_msl"
-TEAL = "#0d9488"
 NAVY = "#0b2545"
+TEAL = "#0d9488"
 BLUE = "#134074"
 
-# ---------- Styling ----------
+st.set_page_config(page_title="AgentWeather", page_icon="🌦️", layout="wide")
+
 st.markdown("""
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-.hero {
-    background: linear-gradient(135deg, #0b2545 0%, #134074 45%, #0d9488 100%);
-    padding: 2.2rem 1.5rem; border-radius: 20px; text-align: center;
-    color: white; margin-bottom: 1.3rem;
-    box-shadow: 0 8px 24px rgba(11,37,69,.25);
-}
-.hero h1 { margin: 0; font-size: 2.3rem; color: white; }
-.hero p { margin: .5rem 0 0 0; opacity: .9; font-size: 1.05rem; }
-.card {
-    padding: 1.1rem; border-radius: 16px; text-align: center; color: white;
-    background: linear-gradient(145deg, #0b2545, #0d9488);
-    box-shadow: 0 6px 16px rgba(11,37,69,.20); margin-bottom: .8rem;
-}
-.card .day { font-size: .95rem; opacity: .95; }
-.card .val { font-size: 2.5rem; font-weight: 700; line-height: 1.2; }
-.card .cat { font-size: .85rem; }
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-       margin-right: 6px; border: 1px solid white; }
-.advice {
-    padding: 1rem 1.2rem; border-radius: 12px; background: white;
-    border-left: 6px solid #0d9488; margin-top: .5rem; color: #0b2545;
-    box-shadow: 0 2px 8px rgba(11,37,69,.10);
-}
-.footer-custom {
-    text-align: center; padding: 1rem; margin-top: 2rem; color: white;
-    background: linear-gradient(90deg, #0b2545, #0d9488); border-radius: 12px;
-}
+.hero {background: linear-gradient(135deg, #0b2545 0%, #134074 45%, #0d9488 100%);
+  padding: 2rem 1.5rem; border-radius: 20px; text-align: center; color: white; margin-bottom: 1.2rem;}
+.hero h1 {margin: 0; font-size: 2.3rem; color: white;}
+.hero p {margin: .5rem 0 0 0; opacity: .9;}
+.card {padding: 1rem; border-radius: 16px; text-align: center; color: white;
+  background: linear-gradient(145deg, #0b2545, #0d9488); margin-bottom: .8rem;}
+.card .lab {font-size: .85rem; opacity: .9;}
+.card .val {font-size: 1.9rem; font-weight: 700;}
+.news {padding: 1.2rem; border-radius: 14px; background: white; color: #0b2545;
+  border-left: 6px solid #0d9488; box-shadow: 0 2px 8px rgba(11,37,69,.12); white-space: pre-wrap;}
+.alert {padding: 1rem; border-radius: 12px; background: #fff3cd; color: #5c4400;
+  border-left: 6px solid #e67e22; white-space: pre-wrap;}
+.footer-custom {text-align: center; padding: 1rem; margin-top: 2rem; color: white;
+  background: linear-gradient(90deg, #0b2545, #0d9488); border-radius: 12px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Helpers ----------
-CHART_CFG = {"staticPlot": True}  # no zoom / click
+CFG = {"staticPlot": True}
 
-def style_fig(fig, height=420):
-    fig.update_layout(
-        height=height,
-        paper_bgcolor="white", plot_bgcolor="white",
-        font=dict(color=NAVY, size=14),
-        dragmode=False,
-        margin=dict(t=60, b=40, l=40, r=20),
-    )
-    fig.update_xaxes(showgrid=True, gridcolor="#e3eef0", linecolor=NAVY)
-    fig.update_yaxes(showgrid=True, gridcolor="#e3eef0", linecolor=NAVY)
+def style(fig, h=380):
+    fig.update_layout(height=h, paper_bgcolor="white", plot_bgcolor="white",
+                      font=dict(color=NAVY), dragmode=False, margin=dict(t=50, b=40, l=40, r=20))
     return fig
 
-def get(url, params):
-    r = requests.get(url, params=params, timeout=60)
-    r.raise_for_status()
-    return pd.DataFrame(r.json()["hourly"])
+@st.cache_resource(ttl=3600)
+def fs():
+    key = st.secrets["HOPSWORKS_API_KEY"]
+    key = "".join(str(key).split())
+    return hopsworks.login(api_key_value=key, project="AgentWeather").get_feature_store()
 
-def make_features(d):
-    d = d.copy().sort_values("time").reset_index(drop=True)
-    for col in ["us_aqi", "pm2_5", "pm10"]:
-        for lag in [1, 3, 6, 12, 24, 48]:
-            d[f"{col}_lag{lag}"] = d[col].shift(lag)
-        d[f"{col}_roll24"] = d[col].rolling(24).mean()
-    d["hour"] = d["time"].dt.hour
-    d["month"] = d["time"].dt.month
-    d["dayofweek"] = d["time"].dt.dayofweek
-    return d
+def read(name):
+    try:
+        return fs().get_feature_group(name, version=1).read()
+    except Exception:
+        return pd.DataFrame()
 
-def info(aqi):
-    # returns: label, dot colour, advice
-    if aqi <= 50:
-        return "Good", "#2e9e5b", "Air quality is good. Outdoor activities are perfectly fine."
-    if aqi <= 100:
-        return "Moderate", "#f1c40f", "Air quality is acceptable, but unusually sensitive people (e.g. asthma) should take care."
-    if aqi <= 150:
-        return "Unhealthy for Sensitive Groups", "#e67e22", "Children, elderly and people with breathing problems should limit time outdoors."
-    if aqi <= 200:
-        return "Unhealthy", "#d63031", "Everyone should reduce heavy outdoor activity. Wear a mask outside."
-    if aqi <= 300:
-        return "Very Unhealthy", "#8e44ad", "Avoid going out unless necessary. Wear an N95 mask."
-    return "Hazardous", "#2d3436", "Stay indoors and keep windows closed."
+@st.cache_data(ttl=900)
+def load_all():
+    return {n: read(n) for n in ["karachi_features", "weather_reports", "forecast_ledger",
+                                 "agent_call_log", "drift_log", "model_scores", "shap_importance"]}
 
-@st.cache_resource
-def load_model():
-    return joblib.load("aqi_model.pkl")
+st.markdown('<div class="hero"><h1>🌦️ AgentWeather</h1><p>24-hour weather and air quality forecast for Karachi, powered by AI agents</p></div>', unsafe_allow_html=True)
 
-@st.cache_data(ttl=3600)
-def get_forecast():
-    bundle = load_model()
-    model, features = bundle["model"], bundle["features"]
-    aq = get(AQ_URL, dict(latitude=LAT, longitude=LON, hourly=AQ_VARS,
-                          past_days=7, forecast_days=1, timezone=TZ))
-    w = get(W_FORECAST, dict(latitude=LAT, longitude=LON, hourly=W_VARS,
-                             past_days=7, forecast_days=1, timezone=TZ))
-    rec = aq.merge(w, on="time", how="inner")
-    rec["time"] = pd.to_datetime(rec["time"])
-    now = pd.Timestamp.now(tz=TZ).tz_localize(None)
-    rec = rec[rec["time"] <= now].dropna(subset=["us_aqi", "pm2_5"])
-    rec = make_features(rec)
-    hist = rec.copy()
-    rec = rec.dropna(subset=features)
-    latest = rec.iloc[[-1]]
-    pred = model.predict(latest[features])[0]
-    base = latest["time"].iloc[0]
-    current = float(latest["us_aqi"].iloc[0])
-    rows = [{"Date": (base + pd.Timedelta(hours=h)).strftime("%a, %d %b"),
-             "AQI": round(float(p))} for h, p in zip([24, 48, 72], pred)]
-    return base, current, pd.DataFrame(rows), hist, latest.iloc[0]
-
-# ---------- Sidebar ----------
-st.sidebar.title("⚙️ Settings")
-days = st.sidebar.slider("History (days)", 1, 7, 7)
-show_bands = st.sidebar.checkbox("Show AQI colour bands", True)
-if st.sidebar.button("🔄 Refresh data"):
+if st.sidebar.button("Refresh data"):
     st.cache_data.clear()
     st.rerun()
-st.sidebar.markdown("---")
-st.sidebar.caption("Data: Open-Meteo API")
-st.sidebar.caption("Model: Ridge Regression (multi-output)")
-st.sidebar.caption("Built by " + YOUR_NAME)
-
-# ---------- Header ----------
-st.markdown("""
-<div class="hero">
-  <h1>🌫️ Karachi AQI Predictor</h1>
-  <p>3-day air quality forecast powered by machine learning</p>
-</div>
-""", unsafe_allow_html=True)
+st.sidebar.caption("Data: Open-Meteo | Store: Hopsworks | Agents: LangGraph + Gemini")
 
 try:
-    base, current, fc, hist, latest = get_forecast()
-    label, color, advice = info(current)
-
-    tab1, tab2, tab3, tab4 = st.tabs(["📅 Forecast", "📈 History", "🧪 Pollutants", "ℹ️ About"])
-
-    # ----- Tab 1: Forecast -----
-    with tab1:
-        left, right = st.columns([1, 1.4])
-        with left:
-            gauge = go.Figure(go.Indicator(
-                mode="gauge+number", value=round(current),
-                title={"text": f"Current AQI: {label}"},
-                gauge={"axis": {"range": [0, 300]}, "bar": {"color": TEAL},
-                       "steps": [{"range": [0, 50], "color": "#d9f0f2"},
-                                 {"range": [50, 100], "color": "#b9e3e6"},
-                                 {"range": [100, 150], "color": "#8fcfd4"},
-                                 {"range": [150, 200], "color": "#5fb5bd"},
-                                 {"range": [200, 300], "color": "#2f8f9a"}]}))
-            st.plotly_chart(style_fig(gauge, 300), use_container_width=True, config=CHART_CFG)
-        with right:
-            st.subheader("Next 3 days")
-            cols = st.columns(3)
-            for col, (_, row) in zip(cols, fc.iterrows()):
-                l, c, _ = info(row["AQI"])
-                col.markdown(
-                    f'<div class="card">'
-                    f'<div class="day">{row["Date"]}</div>'
-                    f'<div class="val">{row["AQI"]}</div>'
-                    f'<div class="cat"><span class="dot" style="background:{c}"></span>{l}</div></div>',
-                    unsafe_allow_html=True)
-            st.markdown(
-                f'<div class="advice">💡 <b>Health advice:</b> {advice}</div>',
-                unsafe_allow_html=True)
-
-        bar = go.Figure(go.Bar(x=fc["Date"], y=fc["AQI"],
-                               marker_color=[TEAL, BLUE, NAVY],
-                               text=fc["AQI"], textposition="outside"))
-        bar.update_layout(title="Forecast chart", yaxis_title="AQI")
-        st.plotly_chart(style_fig(bar, 320), use_container_width=True, config=CHART_CFG)
-
-    # ----- Tab 2: History -----
-    with tab2:
-        cutoff = hist["time"].max() - pd.Timedelta(days=days)
-        h = hist[hist["time"] >= cutoff]
-        fig = px.line(h, x="time", y="us_aqi", title=f"AQI over the last {days} days")
-        fig.update_traces(line_color=TEAL, line_width=3)
-        if show_bands:
-            for lo, hi, c in [(0, 50, "green"), (50, 100, "yellow"),
-                              (100, 150, "orange"), (150, 200, "red")]:
-                fig.add_hrect(y0=lo, y1=hi, fillcolor=c, opacity=0.08, line_width=0)
-        fig.update_layout(xaxis_title="Time", yaxis_title="AQI")
-        st.plotly_chart(style_fig(fig), use_container_width=True, config=CHART_CFG)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Average AQI", round(h["us_aqi"].mean()))
-        c2.metric("Highest AQI", round(h["us_aqi"].max()))
-        c3.metric("Lowest AQI", round(h["us_aqi"].min()))
-
-    # ----- Tab 3: Pollutants -----
-    with tab3:
-        opts = {"PM2.5": "pm2_5", "PM10": "pm10", "Carbon Monoxide": "carbon_monoxide",
-                "Nitrogen Dioxide": "nitrogen_dioxide", "Sulphur Dioxide": "sulphur_dioxide",
-                "Ozone": "ozone", "Temperature": "temperature_2m",
-                "Humidity": "relative_humidity_2m", "Wind speed": "wind_speed_10m"}
-        pick = st.multiselect("What do you want to see?", list(opts.keys()),
-                              default=["PM2.5", "PM10"])
-        if pick:
-            cutoff = hist["time"].max() - pd.Timedelta(days=days)
-            h = hist[hist["time"] >= cutoff]
-            fig2 = px.line(h, x="time", y=[opts[p] for p in pick],
-                           color_discrete_sequence=[TEAL, BLUE, "#e67e22",
-                                                    "#8e44ad", "#d63031", "#2e9e5b"])
-            fig2.update_layout(legend_title="")
-            st.plotly_chart(style_fig(fig2), use_container_width=True, config=CHART_CFG)
-        else:
-            st.info("Please select at least one option above.")
-
-    # ----- Tab 4: About -----
-    with tab4:
-        st.markdown(f"""
-### About this project
-This app predicts Karachi's **Air Quality Index (AQI)** for the next 24, 48 and 72 hours. AQI values follow the US EPA scale (0-500), which is the standard used by the Open-Meteo data source.
-
-**Process:**
-1. Hourly pollution and weather data collected from the Open-Meteo API (from Jan 2024)
-2. Data cleaning and feature engineering (lag values, rolling averages, hour/month)
-3. Ridge and Random Forest models compared using MAE and RMSE
-4. Best model (Ridge, MAE ≈ 8.6) saved and deployed on Streamlit
-
-**Tools:** Python, Pandas, Scikit-learn, Plotly, Streamlit, GitHub
-
-**Latest data time:** {base}
-""")
-
+    D = load_all()
 except Exception as e:
-    st.error(f"Something went wrong: {e}")
+    st.error("Could not connect to Hopsworks: " + str(e))
+    st.stop()
 
-# ---------- Footer ----------
-st.markdown(
-    f'<div class="footer-custom">Developed by <b>{YOUR_NAME}</b> | Data Science Intern | 2026</div>',
-    unsafe_allow_html=True)
+feat = D["karachi_features"]
+reports = D["weather_reports"]
+ledger = D["forecast_ledger"]
+calls = D["agent_call_log"]
+drift = D["drift_log"]
+scores = D["model_scores"]
+shap_df = D["shap_importance"]
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Forecast", "Weather Report", "Agent Activity", "EDA", "Models and SHAP"])
+
+with tab1:
+    if ledger.empty:
+        st.info("No forecast yet. Run the Hourly pipeline in GitHub Actions.")
+    else:
+        ledger = ledger.sort_values("ts")
+        last = ledger.groupby("metric").tail(1).set_index("metric")["forecast"]
+        st.caption("Latest forecast for: " + str(ledger.iloc[-1]["forecast_for"]))
+        ang = None
+        items = [("AQI", last.get("aqi"), ""), ("Temperature", last.get("temperature_c"), " C"),
+                 ("Humidity", last.get("humidity_pct"), " %"), ("UV index", last.get("uv_index"), ""),
+                 ("Wind speed", last.get("wind_speed_kmh"), " km/h"), ("Wind direction", last.get("wind_direction_deg"), " deg"),
+                 ("Precipitation", last.get("precipitation_mm"), " mm"), ("Rain probability", last.get("rain_probability_pct"), " %")]
+        cols = st.columns(4)
+        for i, (lab, v, u) in enumerate(items):
+            txt = "n/a" if v is None or pd.isna(v) else str(round(float(v), 1)) + u
+            cols[i % 4].markdown('<div class="card"><div class="lab">' + lab + '</div><div class="val">' + txt + '</div></div>', unsafe_allow_html=True)
+        if not feat.empty:
+            h = feat.sort_values("time").tail(72)
+            fig = px.line(h, x="time", y="us_aqi", title="AQI, last 72 hours")
+            fig.update_traces(line_color=TEAL, line_width=3)
+            st.plotly_chart(style(fig), use_container_width=True, config=CFG)
+
+with tab2:
+    if reports.empty:
+        st.info("No report yet. Reports are written daily and when an alert fires.")
+    else:
+        r = reports.sort_values("ts").iloc[-1]
+        st.subheader("Latest weather report")
+        st.markdown('<div class="news">' + str(r["report"]) + '</div>', unsafe_allow_html=True)
+        if str(r.get("alert", "")).strip():
+            st.subheader("Active alert")
+            st.markdown('<div class="alert">' + str(r["alert"]) + '</div>', unsafe_allow_html=True)
+
+with tab3:
+    st.subheader("Agent call log")
+    if calls.empty:
+        st.info("No LLM calls logged yet.")
+    else:
+        c = calls.sort_values("ts", ascending=False)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total LLM calls", len(c))
+        failed = c[c["status"].astype(str).str.startswith("failed")]
+        m2.metric("Failed calls", len(failed))
+        m3.metric("Avg latency (s)", round(float(c["latency_s"].mean()), 2))
+        st.dataframe(c[["ts", "agent", "status", "latency_s", "fallback_used"]].head(50), use_container_width=True)
+        st.subheader("Failure log")
+        if failed.empty:
+            st.success("No failed calls.")
+        else:
+            st.dataframe(failed[["ts", "agent", "status"]].head(50), use_container_width=True)
+    st.subheader("Drift events")
+    if drift.empty:
+        st.info("No drift events yet.")
+    else:
+        d = drift.sort_values("ts", ascending=False)
+        st.dataframe(d[["ts", "metric", "drift_type", "score", "threshold", "action_taken"]].head(60), use_container_width=True)
+    st.subheader("Forecast ledger")
+    if not ledger.empty:
+        st.dataframe(ledger.sort_values("ts", ascending=False)[["ts", "forecast_for", "metric", "forecast"]].head(60), use_container_width=True)
+
+with tab4:
+    if feat.empty:
+        st.info("No data.")
+    else:
+        f = feat.sort_values("time")
+        opts = {"AQI": "us_aqi", "Temperature (C)": "temperature_2m", "Humidity (%)": "relative_humidity_2m",
+                "UV index": "uv_index", "Wind speed (km/h)": "wind_speed_10m", "Precipitation (mm)": "precipitation"}
+        pick = st.selectbox("Metric", list(opts.keys()))
+        col = opts[pick]
+        daily = f.set_index("time")[col].resample("D").mean().reset_index()
+        fig = px.line(daily.tail(365), x="time", y=col, title=pick + ": daily average")
+        fig.update_traces(line_color=TEAL)
+        st.plotly_chart(style(fig), use_container_width=True, config=CFG)
+        a, b = st.columns(2)
+        fig2 = px.histogram(f, x=col, nbins=40, title="Distribution")
+        fig2.update_traces(marker_color=BLUE)
+        a.plotly_chart(style(fig2, 320), use_container_width=True, config=CFG)
+        hh = f.groupby("hour")[col].mean().reset_index()
+        fig3 = px.bar(hh, x="hour", y=col, title="Average by hour of day")
+        fig3.update_traces(marker_color=TEAL)
+        b.plotly_chart(style(fig3, 320), use_container_width=True, config=CFG)
+        mm = f.groupby("month")[col].mean().reset_index()
+        fig4 = px.bar(mm, x="month", y=col, title="Average by month")
+        fig4.update_traces(marker_color=NAVY)
+        st.plotly_chart(style(fig4, 320), use_container_width=True, config=CFG)
+        st.caption("Summary statistics")
+        st.dataframe(f[col].describe().round(2).to_frame().T, use_container_width=True)
+
+with tab5:
+    st.subheader("Model comparison (test set)")
+    if scores.empty:
+        st.info("No scores yet.")
+    else:
+        s = scores.sort_values("run_time").drop_duplicates("key", keep="last")
+        st.dataframe(s[["target", "model", "test_mae", "test_rmse", "test_r2"]].sort_values(["target", "test_rmse"]), use_container_width=True)
+    st.subheader("SHAP: top features per metric")
+    if shap_df.empty:
+        st.info("No SHAP data yet.")
+    else:
+        t = st.selectbox("Metric", sorted(shap_df["target"].unique()))
+        sd = shap_df[shap_df["target"] == t].sort_values("mean_abs_shap")
+        fig = px.bar(sd, x="mean_abs_shap", y="feature", orientation="h", title="Mean absolute SHAP value")
+        fig.update_traces(marker_color=TEAL)
+        st.plotly_chart(style(fig, 420), use_container_width=True, config=CFG)
+
+st.markdown('<div class="footer-custom">Developed by <b>' + YOUR_NAME + '</b> | Data Science Intern | 2026</div>', unsafe_allow_html=True)
