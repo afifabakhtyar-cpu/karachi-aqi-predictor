@@ -8,9 +8,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    env:
-         HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -18,12 +16,6 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Check secret
-        env:
-          K: ${{ secrets.HOPSWORKS_API_KEY }}
-        run: |
-          echo "secret length: ${#K}"
-          echo "dots: $(echo "$K" | tr -cd '.' | wc -c)"
       - name: Ingest data
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
@@ -33,3 +25,8 @@ jobs:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python -m agents.graph
+      - name: Extra training if drift
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: |
+          if [ "$(cat retrain_flag.txt)" = "1" ]; then python pipelines/train.py; else echo "no drift, skip training"; fi
