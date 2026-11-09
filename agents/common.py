@@ -6,7 +6,7 @@ LAT, LON = 24.8607, 67.0011
 TZ = "Asia/Karachi"
 AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 W_FORECAST = "https://api.open-meteo.com/v1/forecast"
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-3.6-flash"
 
 TARGETS = ["y_aqi", "y_temp", "y_humidity", "y_uv", "y_wind_speed", "y_wind_sin", "y_wind_cos", "y_precip"]
 
