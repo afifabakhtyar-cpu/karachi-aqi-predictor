@@ -29,4 +29,4 @@ jobs:
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
         run: |
-          if [ "$(cat retrain_flag.txt)" = "1" ]; then python pipelines/train.py; else echo "no drift, skip training"; fi
+                    if [ "$(cat retrain_flag.txt)" = "1" ]; then echo "::warning::Drift detected, extra training started"; python pipelines/train.py; else echo "no drift, skip training"; fi
