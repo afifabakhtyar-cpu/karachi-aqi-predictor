@@ -28,7 +28,7 @@ footer {visibility: hidden;}
 .news {padding: 1.2rem; border-radius: 14px; background: white; color: #0b2545;
   border-left: 6px solid #0d9488; box-shadow: 0 2px 8px rgba(11,37,69,.12); white-space: pre-wrap;}
 .alert {padding: 1rem; border-radius: 12px; background: #fff3cd; color: #5c4400;
-  border-left: 6px solid #e67e22; white-space: pre-wrap;}
+  border-left: 6px solid #e67e22; white-space: pre-wrap; margin-bottom: .6rem;}
 .footer-custom {text-align: center; padding: 1rem; margin-top: 2rem; color: white;
   background: linear-gradient(90deg, #0b2545, #0d9488); border-radius: 12px;}
 </style>
@@ -88,7 +88,6 @@ with tab1:
         ledger = ledger.sort_values("ts")
         last = ledger.groupby("metric").tail(1).set_index("metric")["forecast"]
         st.caption("Latest forecast for: " + str(ledger.iloc[-1]["forecast_for"]))
-        ang = None
         items = [("AQI", last.get("aqi"), ""), ("Temperature", last.get("temperature_c"), " C"),
                  ("Humidity", last.get("humidity_pct"), " %"), ("UV index", last.get("uv_index"), ""),
                  ("Wind speed", last.get("wind_speed_kmh"), " km/h"), ("Wind direction", last.get("wind_direction_deg"), " deg"),
@@ -131,6 +130,17 @@ with tab3:
             st.success("No failed calls.")
         else:
             st.dataframe(failed[["ts", "agent", "status"]].head(50), use_container_width=True)
+    st.subheader("Alerts")
+    if reports.empty:
+        st.info("No alerts yet.")
+    else:
+        al = reports.sort_values("ts", ascending=False)
+        al = al[al["alert"].astype(str).str.strip() != ""]
+        if al.empty:
+            st.success("No hazard alerts in the latest runs.")
+        else:
+            for _, row in al.head(5).iterrows():
+                st.markdown('<div class="alert"><b>' + str(row["ts"]) + '</b>\n' + str(row["alert"]) + '</div>', unsafe_allow_html=True)
     st.subheader("Drift events")
     if drift.empty:
         st.info("No drift events yet.")
@@ -146,44 +156,4 @@ with tab4:
         st.info("No data.")
     else:
         f = feat.sort_values("time")
-        opts = {"AQI": "us_aqi", "Temperature (C)": "temperature_2m", "Humidity (%)": "relative_humidity_2m",
-                "UV index": "uv_index", "Wind speed (km/h)": "wind_speed_10m", "Precipitation (mm)": "precipitation"}
-        pick = st.selectbox("Metric", list(opts.keys()))
-        col = opts[pick]
-        daily = f.set_index("time")[col].resample("D").mean().reset_index()
-        fig = px.line(daily.tail(365), x="time", y=col, title=pick + ": daily average")
-        fig.update_traces(line_color=TEAL)
-        st.plotly_chart(style(fig), use_container_width=True, config=CFG)
-        a, b = st.columns(2)
-        fig2 = px.histogram(f, x=col, nbins=40, title="Distribution")
-        fig2.update_traces(marker_color=BLUE)
-        a.plotly_chart(style(fig2, 320), use_container_width=True, config=CFG)
-        hh = f.groupby("hour")[col].mean().reset_index()
-        fig3 = px.bar(hh, x="hour", y=col, title="Average by hour of day")
-        fig3.update_traces(marker_color=TEAL)
-        b.plotly_chart(style(fig3, 320), use_container_width=True, config=CFG)
-        mm = f.groupby("month")[col].mean().reset_index()
-        fig4 = px.bar(mm, x="month", y=col, title="Average by month")
-        fig4.update_traces(marker_color=NAVY)
-        st.plotly_chart(style(fig4, 320), use_container_width=True, config=CFG)
-        st.caption("Summary statistics")
-        st.dataframe(f[col].describe().round(2).to_frame().T, use_container_width=True)
-
-with tab5:
-    st.subheader("Model comparison (test set)")
-    if scores.empty:
-        st.info("No scores yet.")
-    else:
-        s = scores.sort_values("run_time").drop_duplicates("key", keep="last")
-        st.dataframe(s[["target", "model", "test_mae", "test_rmse", "test_r2"]].sort_values(["target", "test_rmse"]), use_container_width=True)
-    st.subheader("SHAP: top features per metric")
-    if shap_df.empty:
-        st.info("No SHAP data yet.")
-    else:
-        t = st.selectbox("Metric", sorted(shap_df["target"].unique()))
-        sd = shap_df[shap_df["target"] == t].sort_values("mean_abs_shap")
-        fig = px.bar(sd, x="mean_abs_shap", y="feature", orientation="h", title="Mean absolute SHAP value")
-        fig.update_traces(marker_color=TEAL)
-        st.plotly_chart(style(fig, 420), use_container_width=True, config=CFG)
-
-st.markdown('<div class="footer-custom">Developed by <b>' + YOUR_NAME + '</b> | Data Science Intern | 2026</div>', unsafe_allow_html=True)
+        opts = {"AQI": "us_aqi", "Temperature (C)":
