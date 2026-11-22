@@ -4,8 +4,7 @@ A 24-hour weather and air quality forecasting system for Karachi. It collects da
 
 **Live dashboard:** https://karachi-aqi-predictor-afifa-dwrn5hcjphgswquuyexfd2.streamlit.app/
 
-**Project report:** [[AgentWeather_Report.docx](AgentWeather_Report.docx)](https://docs.google.com/document/d/1xZZrSJHuTYMdfkFW-3QExC4RWA0HI2T_QZ-V36lJpP0/edit?usp=drivesdk)
-
+**Project report:** [AgentWeather project report (Google Doc)](https://docs.google.com/document/d/1xZZrSJHuTYMdfkFW-3QExC4RWA0HI2T_QZ-V36lJpP0/edit?usp=drivesdk)
 ## What it forecasts
 Six metrics, 24 hours ahead: AQI, temperature (C), precipitation (mm and rain probability), humidity (%), UV index, and wind (speed and direction).
 
