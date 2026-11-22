@@ -156,4 +156,4 @@ with tab4:
         st.info("No data.")
     else:
         f = feat.sort_values("time")
-        opts = {"AQI": "us_aqi", "Temperature (C)":
+                opts = {"AQI": "us_aqi", "Temperature (C)": "temperature_2m", "Humidity (%)": "relative_humidity_2m", "UV index": "uv_index", "Wind speed (km/h)": "wind_speed_10m", "Precipitation (mm)": "precipitation"}
