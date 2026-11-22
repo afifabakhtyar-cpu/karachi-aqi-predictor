@@ -156,4 +156,43 @@ with tab4:
         st.info("No data.")
     else:
         f = feat.sort_values("time")
-                opts = {"AQI": "us_aqi", "Temperature (C)": "temperature_2m", "Humidity (%)": "relative_humidity_2m", "UV index": "uv_index", "Wind speed (km/h)": "wind_speed_10m", "Precipitation (mm)": "precipitation"}
+        opts = {"AQI": "us_aqi", "Temperature (C)": "temperature_2m", "Humidity (%)": "relative_humidity_2m", "UV index": "uv_index", "Wind speed (km/h)": "wind_speed_10m", "Precipitation (mm)": "precipitation"}
+        pick = st.selectbox("Metric", list(opts.keys()))
+        col = opts[pick]
+        daily = f.set_index("time")[col].resample("D").mean().reset_index()
+        fig = px.line(daily.tail(365), x="time", y=col, title=pick + ": daily average")
+        fig.update_traces(line_color=TEAL)
+        st.plotly_chart(style(fig), use_container_width=True, config=CFG)
+        a, b = st.columns(2)
+        fig2 = px.histogram(f, x=col, nbins=40, title="Distribution")
+        fig2.update_traces(marker_color=BLUE)
+        a.plotly_chart(style(fig2, 320), use_container_width=True, config=CFG)
+        hh = f.groupby("hour")[col].mean().reset_index()
+        fig3 = px.bar(hh, x="hour", y=col, title="Average by hour of day")
+        fig3.update_traces(marker_color=TEAL)
+        b.plotly_chart(style(fig3, 320), use_container_width=True, config=CFG)
+        mm = f.groupby("month")[col].mean().reset_index()
+        fig4 = px.bar(mm, x="month", y=col, title="Average by month")
+        fig4.update_traces(marker_color=NAVY)
+        st.plotly_chart(style(fig4, 320), use_container_width=True, config=CFG)
+        st.caption("Summary statistics")
+        st.dataframe(f[col].describe().round(2).to_frame().T, use_container_width=True)
+
+with tab5:
+    st.subheader("Model comparison (test set)")
+    if scores.empty:
+        st.info("No scores yet.")
+    else:
+        s = scores.sort_values("run_time").drop_duplicates("key", keep="last")
+        st.dataframe(s[["target", "model", "test_mae", "test_rmse", "test_r2"]].sort_values(["target", "test_rmse"]), use_container_width=True)
+    st.subheader("SHAP: top features per metric")
+    if shap_df.empty:
+        st.info("No SHAP data yet.")
+    else:
+        t = st.selectbox("Metric", sorted(shap_df["target"].unique()))
+        sd = shap_df[shap_df["target"] == t].sort_values("mean_abs_shap")
+        fig = px.bar(sd, x="mean_abs_shap", y="feature", orientation="h", title="Mean absolute SHAP value")
+        fig.update_traces(marker_color=TEAL)
+        st.plotly_chart(style(fig, 420), use_container_width=True, config=CFG)
+
+st.markdown('<div class="footer-custom">Developed by <b>' + YOUR_NAME + '</b> | Data Science Intern | 2026</div>', unsafe_allow_html=True)
